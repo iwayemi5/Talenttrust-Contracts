@@ -102,6 +102,29 @@ enum DataKey {
     RefundableBalance(u32),
 }
 
+fn emit_lifecycle_event(
+    env: &Env,
+    operation: Symbol,
+    contract_id: u32,
+    status: ContractStatus,
+    amount: i128,
+    milestone_index: u32,
+    actor: Option<Address>,
+) {
+    // Stable topic and payload shape for indexers:
+    // topic: ("escrow", "v1", operation, contract_id)
+    // data: (status, amount, milestone_index, actor, timestamp)
+    env.events().publish(
+        (
+            symbol_short!("escrow"),
+            symbol_short!("v1"),
+            operation,
+            contract_id,
+        ),
+        (status, amount, milestone_index, actor, env.ledger().timestamp()),
+    );
+}
+
 fn update_readiness_checklist<F>(env: &Env, f: F)
 where
     F: FnOnce(&mut ReadinessChecklist),
@@ -197,6 +220,16 @@ impl Escrow {
             .set(&DataKey::Milestones(id), &milestones);
         env.storage().persistent().set(&DataKey::ContractCount, &(id + 1));
 
+        emit_lifecycle_event(
+            &env,
+            symbol_short!("create"),
+            id,
+            ContractStatus::Created,
+            total_amount,
+            0,
+            Some(client),
+        );
+
         id
     }
 
@@ -220,6 +253,15 @@ impl Escrow {
         }
 
         env.storage().persistent().set(&contract_key, &contract);
+        emit_lifecycle_event(
+            &env,
+            symbol_short!("deposit"),
+            contract_id,
+            contract.status,
+            amount,
+            0,
+            None,
+        );
 
         true
     }
@@ -230,6 +272,15 @@ impl Escrow {
         env.storage().persistent().set(
             &DataKey::MilestoneApprovalTime(contract_id, milestone_index),
             &approval_time,
+        );
+        emit_lifecycle_event(
+            &env,
+            symbol_short!("approve"),
+            contract_id,
+            ContractStatus::Funded,
+            0,
+            milestone_index,
+            None,
         );
         true
     }
@@ -247,11 +298,22 @@ impl Escrow {
         env.storage().persistent().set(&milestone_key, &true);
 
         // Update released amount
+        let mut released_amount = 0i128;
         if let Some(amount) = contract.milestones.get(milestone_index) {
+            released_amount = amount;
             contract.released_amount += amount;
         }
 
         env.storage().persistent().set(&contract_key, &contract);
+        emit_lifecycle_event(
+            &env,
+            symbol_short!("release"),
+            contract_id,
+            contract.status,
+            released_amount,
+            milestone_index,
+            None,
+        );
 
         true
     }
@@ -338,10 +400,15 @@ impl Escrow {
         contract.status = ContractStatus::Cancelled;
         env.storage().persistent().set(&contract_key, &contract);
 
-        // 7. Emit indexer-friendly event
-        env.events().publish(
-            (Symbol::new(&env, "contract_cancelled"), contract_id),
-            (caller, contract.status, env.ledger().timestamp()),
+        // 7. Emit deterministic lifecycle event for indexers.
+        emit_lifecycle_event(
+            &env,
+            symbol_short!("cancel"),
+            contract_id,
+            contract.status,
+            0,
+            0,
+            Some(caller),
         );
 
         true
