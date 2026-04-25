@@ -1,7 +1,7 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env,
     Symbol, Vec,
 };
 
@@ -95,11 +95,22 @@ pub struct PendingMigration {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingClientMigration {
+    pub current_client: Address,
+    pub proposed_client: Address,
+    pub proposed_client_confirmed: bool,
+    pub requested_at_ledger: u32,
+    pub expires_at_ledger: u32,
+}
+
+#[contracttype]
 #[derive(Clone)]
 enum DataKey {
     Contract(u32),
     MilestoneReleased(u32, u32),
     RefundableBalance(u32),
+    PendingClientMigration(u32),
 }
 
 fn update_readiness_checklist<F>(env: &Env, f: F)
@@ -362,6 +373,190 @@ impl Escrow {
             }
         }
         released
+    }
+
+    /// Request client migration to a new address
+    pub fn request_client_migration(env: Env, contract_id: u32, proposed_client: Address) -> bool {
+        proposed_client.require_auth();
+
+        let contract_key = DataKey::Contract(contract_id);
+        let contract = env
+            .storage()
+            .persistent()
+            .get::<_, EscrowContractData>(&contract_key)
+            .unwrap_or_else(|| env.panic_with_error(EscrowError::ContractNotFound));
+
+        // Only current client can request migration
+        let current_client = contract.client;
+        current_client.require_auth();
+
+        // Check if contract is in a state that allows migration
+        if !Self::can_migrate_client(&contract.status) {
+            env.panic_with_error(EscrowError::InvalidStatusTransition);
+        }
+
+        // Check if there's already a pending migration
+        if Self::has_pending_client_migration_internal(&env, contract_id) {
+            env.panic_with_error(EscrowError::AlreadyCancelled); // Reuse error for "already pending"
+        }
+
+        // Cannot migrate to same address
+        if current_client == proposed_client {
+            env.panic_with_error(EscrowError::InvalidParticipant);
+        }
+
+        // Create pending migration
+        let current_ledger = env.ledger().sequence();
+        let expires_at = current_ledger + PENDING_MIGRATION_TTL_LEDGERS;
+        
+        let pending_migration = PendingClientMigration {
+            current_client: current_client.clone(),
+            proposed_client: proposed_client.clone(),
+            proposed_client_confirmed: false,
+            requested_at_ledger: current_ledger,
+            expires_at_ledger: expires_at,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::PendingClientMigration(contract_id), &pending_migration);
+
+        // Emit event
+        env.events().publish(
+            (Symbol::new(&env, "client_migration_proposed"), contract_id),
+            (current_client, proposed_client, current_ledger),
+        );
+
+        true
+    }
+
+    /// Confirm client migration by the proposed client
+    pub fn confirm_client_migration(env: Env, contract_id: u32) -> bool {
+        let pending_key = DataKey::PendingClientMigration(contract_id);
+        let mut pending = env
+            .storage()
+            .persistent()
+            .get::<_, PendingClientMigration>(&pending_key)
+            .unwrap_or_else(|| env.panic_with_error(EscrowError::ContractNotFound));
+
+        // Proposed client must confirm
+        pending.proposed_client.require_auth();
+
+        // Check if migration is still valid (not expired)
+        let current_ledger = env.ledger().sequence();
+        if current_ledger > pending.expires_at_ledger {
+            // Remove expired migration
+            env.storage().persistent().remove(&pending_key);
+            env.panic_with_error(EscrowError::InvalidStatusTransition);
+        }
+
+        // Mark as confirmed
+        pending.proposed_client_confirmed = true;
+        env.storage().persistent().set(&pending_key, &pending);
+
+        // Emit event
+        env.events().publish(
+            (Symbol::new(&env, "client_migration_confirmed"), contract_id),
+            (pending.current_client, pending.proposed_client, current_ledger),
+        );
+
+        true
+    }
+
+    /// Finalize client migration (atomic update)
+    pub fn finalize_client_migration(env: Env, contract_id: u32) -> bool {
+        let pending_key = DataKey::PendingClientMigration(contract_id);
+        let pending = env
+            .storage()
+            .persistent()
+            .get::<_, PendingClientMigration>(&pending_key)
+            .unwrap_or_else(|| env.panic_with_error(EscrowError::ContractNotFound));
+
+        // Check if migration is confirmed and not expired
+        if !pending.proposed_client_confirmed {
+            env.panic_with_error(EscrowError::InvalidStatusTransition);
+        }
+
+        let current_ledger = env.ledger().sequence();
+        if current_ledger > pending.expires_at_ledger {
+            // Remove expired migration
+            env.storage().persistent().remove(&pending_key);
+            env.panic_with_error(EscrowError::InvalidStatusTransition);
+        }
+
+        // Update contract client atomically
+        let contract_key = DataKey::Contract(contract_id);
+        let mut contract = env
+            .storage()
+            .persistent()
+            .get::<_, EscrowContractData>(&contract_key)
+            .unwrap_or_else(|| env.panic_with_error(EscrowError::ContractNotFound));
+
+        contract.client = pending.proposed_client.clone();
+        env.storage().persistent().set(&contract_key, &contract);
+
+        // Remove pending migration
+        env.storage().persistent().remove(&pending_key);
+
+        // Emit event
+        env.events().publish(
+            (Symbol::new(&env, "client_migration_finalized"), contract_id),
+            (pending.current_client, pending.proposed_client, current_ledger),
+        );
+
+        true
+    }
+
+    /// Cancel pending client migration
+    pub fn cancel_client_migration(env: Env, contract_id: u32) -> bool {
+        let pending_key = DataKey::PendingClientMigration(contract_id);
+        let pending = env
+            .storage()
+            .persistent()
+            .get::<_, PendingClientMigration>(&pending_key)
+            .unwrap_or_else(|| env.panic_with_error(EscrowError::ContractNotFound));
+
+        // Only current client can cancel
+        pending.current_client.require_auth();
+
+        // Remove pending migration
+        env.storage().persistent().remove(&pending_key);
+
+        // Emit event
+        env.events().publish(
+            (Symbol::new(&env, "client_migration_cancelled"), contract_id),
+            (pending.current_client, pending.proposed_client, env.ledger().sequence()),
+        );
+
+        true
+    }
+
+    /// Get pending client migration information
+    pub fn get_pending_client_migration(env: Env, contract_id: u32) -> PendingClientMigration {
+        env.storage()
+            .persistent()
+            .get::<_, PendingClientMigration>(&DataKey::PendingClientMigration(contract_id))
+            .unwrap_or_else(|| env.panic_with_error(EscrowError::ContractNotFound))
+    }
+
+    /// Check if there's a pending client migration
+    pub fn has_pending_client_migration(env: Env, contract_id: u32) -> bool {
+        Self::has_pending_client_migration_internal(&env, contract_id)
+    }
+
+    // Helper methods
+    fn has_pending_client_migration_internal(env: &Env, contract_id: u32) -> bool {
+        env.storage()
+            .persistent()
+            .get::<_, PendingClientMigration>(&DataKey::PendingClientMigration(contract_id))
+            .is_some()
+    }
+
+    fn can_migrate_client(status: &ContractStatus) -> bool {
+        match status {
+            ContractStatus::Created | ContractStatus::Funded => true,
+            ContractStatus::Completed | ContractStatus::Cancelled | ContractStatus::Disputed | ContractStatus::Refunded => false,
+        }
     }
 }
 
