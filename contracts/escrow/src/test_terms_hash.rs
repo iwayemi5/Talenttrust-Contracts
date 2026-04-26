@@ -34,6 +34,7 @@ mod terms_hash_tests {
         let id = client.create_contract(
             &client_addr,
             &freelancer_addr,
+            &None,
             &milestones,
             &terms_hash,
             &None,
@@ -53,7 +54,14 @@ mod terms_hash_tests {
 
         let milestones = vec![&env, 100_i128, 200_i128];
 
-        let id = client.create_contract(&client_addr, &freelancer_addr, &milestones, &None, &None);
+        let id = client.create_contract(
+            &client_addr,
+            &freelancer_addr,
+            &None,
+            &milestones,
+            &None,
+            &None,
+        );
 
         assert_eq!(id, 0);
 
@@ -73,6 +81,7 @@ mod terms_hash_tests {
         let id = client.create_contract(
             &client_addr,
             &freelancer_addr,
+            &None,
             &milestones,
             &terms_hash,
             &None,
@@ -96,21 +105,26 @@ mod terms_hash_tests {
         let milestones = vec![&env, 100_i128];
         let hash1 = Some(create_test_hash(&env));
 
-        let id1 =
-            client.create_contract(&client_addr, &freelancer_addr, &milestones, &hash1, &None);
+        let id1 = client.create_contract(
+            &client_addr,
+            &freelancer_addr,
+            &None,
+            &milestones,
+            &hash1,
+            &None,
+        );
 
         // Create different hash for second contract
-        let hash2 = Some(Bytes::from_slice(
-            &env,
-            &[
-                0x3c, 0x37, 0xc5, 0x7c, 0x79, 0x0f, 0xd7, 0x9f, 0x0a, 0x0c, 0x56, 0x4d, 0x2e, 0x41,
-                0x45, 0x45, 0x24, 0x53, 0x3e, 0x81, 0x75, 0x94, 0xcb, 0xb1, 0x0a, 0x9b, 0x6f, 0x99,
-                0x73, 0x77, 0xf8, 0xbf,
-            ],
-        ));
+        let hash2 = Some(Bytes::from_slice(&env, &[0x11; 32]));
 
-        let id2 =
-            client.create_contract(&client_addr, &freelancer_addr, &milestones, &hash2, &None);
+        let id2 = client.create_contract(
+            &client_addr,
+            &freelancer_addr,
+            &None,
+            &milestones,
+            &hash2,
+            &None,
+        );
 
         // Verify each contract has its own hash
         let stored_hash1 = client.get_terms_hash(&id1);
@@ -134,6 +148,7 @@ mod terms_hash_tests {
         let id = client.create_contract(
             &client_addr,
             &freelancer_addr,
+            &None,
             &milestones,
             &terms_hash,
             &grace_period,

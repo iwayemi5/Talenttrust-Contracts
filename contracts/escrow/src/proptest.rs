@@ -49,10 +49,7 @@ fn op_strategy(n_milestones: usize, total: i128) -> impl Strategy<Value = Op> {
     ]
 }
 
-fn op_sequence_strategy(
-    n_milestones: usize,
-    total: i128,
-) -> impl Strategy<Value = StdVec<Op>> {
+fn op_sequence_strategy(n_milestones: usize, total: i128) -> impl Strategy<Value = StdVec<Op>> {
     prop::collection::vec(op_strategy(n_milestones, total), 0..=MAX_OPS)
 }
 
@@ -63,7 +60,6 @@ fn op_sequence_strategy(
 
 #[derive(Clone, Debug)]
 struct Shadow {
-    total_amount: i128,
     funded_amount: i128,
     released_amount: i128,
     refunded_amount: i128,
@@ -75,7 +71,6 @@ struct Shadow {
 impl Shadow {
     fn new(amounts: &[i128]) -> Self {
         Self {
-            total_amount: amounts.iter().copied().sum(),
             funded_amount: 0,
             released_amount: 0,
             refunded_amount: 0,
@@ -90,7 +85,10 @@ impl Shadow {
     }
 
     fn is_open(&self) -> bool {
-        matches!(self.status, ContractStatus::Created | ContractStatus::Funded)
+        matches!(
+            self.status,
+            ContractStatus::Created | ContractStatus::Funded
+        )
     }
 
     fn recompute_status(&mut self) {
@@ -127,11 +125,13 @@ impl Shadow {
                 if *amount <= 0 {
                     return false;
                 }
-                let new_funded = self.funded_amount + *amount;
-                if new_funded > self.total_amount {
+                if self.status == ContractStatus::Completed
+                    || self.status == ContractStatus::Cancelled
+                    || self.status == ContractStatus::Refunded
+                {
                     return false;
                 }
-                self.funded_amount = new_funded;
+                self.funded_amount += *amount;
                 self.recompute_status();
                 true
             }
@@ -194,20 +194,23 @@ struct Harness<'a> {
     client: EscrowClient<'a>,
     client_addr: Address,
     freelancer_addr: Address,
+    arbiter_addr: Address,
 }
 
 fn fresh_harness<'a>() -> Harness<'a> {
     let env = Env::default();
     env.mock_all_auths();
-    let addr = env.register(Escrow, ());
-    let client = EscrowClient::new(&env, &addr);
+    let contract_id = env.register(Escrow, ());
+    let client = EscrowClient::new(&env, &contract_id);
     let client_addr = Address::generate(&env);
     let freelancer_addr = Address::generate(&env);
+    let arbiter_addr = Address::generate(&env);
     Harness {
         env,
         client,
         client_addr,
         freelancer_addr,
+        arbiter_addr,
     }
 }
 
@@ -287,7 +290,7 @@ proptest! {
     fn prop_creation_invariants(amounts in milestone_amounts_strategy()) {
         let h = fresh_harness();
         let ms = amounts_sorovec(&h.env, &amounts);
-        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &ms);
+        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &Some(h.arbiter_addr.clone()), &ms, &None, &None);
         prop_assert_eq!(id, 0);
 
         let data = h.client.get_contract(&id);
@@ -313,7 +316,7 @@ proptest! {
         let h = fresh_harness();
         for (expected_id, amounts) in schedules.iter().enumerate() {
             let ms = amounts_sorovec(&h.env, amounts);
-            let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &ms);
+            let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &Some(h.arbiter_addr.clone()), &ms, &None, &None);
             prop_assert_eq!(id, expected_id as u32);
 
             let data = h.client.get_contract(&id);
@@ -333,7 +336,7 @@ proptest! {
     ) {
         let h = fresh_harness();
         let ms = amounts_sorovec(&h.env, &amounts);
-        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &ms);
+        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &Some(h.arbiter_addr.clone()), &ms, &None, &None);
 
         let mut shadow = Shadow::new(&amounts);
         let mut prev_status = shadow.status;
@@ -363,7 +366,8 @@ proptest! {
             prop_assert!(data.funded_amount >= 0);
             prop_assert!(data.released_amount >= 0);
             prop_assert!(data.refunded_amount >= 0);
-            prop_assert!(data.funded_amount <= data.total_amount);
+            // prop_assert!(data.funded_amount <= data.total_amount); // Removed because overfunding is allowed
+            prop_assert!(data.released_amount <= data.total_amount);
             prop_assert!(
                 data.released_amount + data.refunded_amount <= data.funded_amount,
                 "negative available balance"
@@ -408,7 +412,7 @@ proptest! {
         let target = target_raw % n;
         let h = fresh_harness();
         let ms = amounts_sorovec(&h.env, &amounts);
-        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &ms);
+        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &Some(h.arbiter_addr.clone()), &ms, &None, &None);
         h.client.deposit_funds(&id, &sum_vec(&amounts));
         h.client.release_milestone(&id, &target);
 
@@ -429,7 +433,7 @@ proptest! {
         let target = target_raw % n;
         let h = fresh_harness();
         let ms = amounts_sorovec(&h.env, &amounts);
-        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &ms);
+        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &Some(h.arbiter_addr.clone()), &ms, &None, &None);
         h.client.deposit_funds(&id, &sum_vec(&amounts));
         h.client.refund_unreleased_milestones(&id, &ids_to_sorovec(&h.env, &[target]));
 
@@ -450,7 +454,7 @@ proptest! {
     ) {
         let h = fresh_harness();
         let ms = amounts_sorovec(&h.env, &amounts);
-        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &ms);
+        let id = h.client.create_contract(&h.client_addr, &h.freelancer_addr, &Some(h.arbiter_addr.clone()), &ms, &None, &None);
 
         for op in &ops {
             let _ = match op {

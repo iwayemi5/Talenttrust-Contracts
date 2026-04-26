@@ -23,7 +23,7 @@ fn create_contract(
     freelancer_addr: &Address,
 ) -> u32 {
     let milestones = vec![env, 100_i128, 200_i128, 300_i128];
-    client.create_contract(client_addr, freelancer_addr, &milestones)
+    client.create_contract(client_addr, freelancer_addr, &None, &milestones, &None, &None)
 }
 
 #[test]

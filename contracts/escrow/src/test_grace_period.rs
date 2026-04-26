@@ -25,6 +25,7 @@ mod grace_period_tests {
         let id = client.create_contract(
             &client_addr,
             &freelancer_addr,
+            &None,
             &milestones,
             &None,
             &grace_period,
@@ -44,7 +45,14 @@ mod grace_period_tests {
 
         let milestones = vec![&env, 100_i128, 200_i128];
 
-        let id = client.create_contract(&client_addr, &freelancer_addr, &milestones, &None, &None);
+        let id = client.create_contract(
+            &client_addr,
+            &freelancer_addr,
+            &None,
+            &milestones,
+            &None,
+            &None,
+        );
 
         assert_eq!(id, 0);
 
@@ -65,6 +73,7 @@ mod grace_period_tests {
         client.create_contract(
             &client_addr,
             &freelancer_addr,
+            &None,
             &milestones,
             &None,
             &grace_period,
@@ -80,7 +89,14 @@ mod grace_period_tests {
         let client = EscrowClient::new(&env, &contract_id);
 
         let milestones = vec![&env, 100_i128];
-        let id = client.create_contract(&client_addr, &freelancer_addr, &milestones, &None, &None);
+        let id = client.create_contract(
+            &client_addr,
+            &freelancer_addr,
+            &None,
+            &milestones,
+            &None,
+            &None,
+        );
 
         assert!(client.approve_milestone(&id, &0));
 
@@ -102,6 +118,7 @@ mod grace_period_tests {
         let id = client.create_contract(
             &client_addr,
             &freelancer_addr,
+            &None,
             &milestones,
             &None,
             &grace_period,
@@ -130,6 +147,7 @@ mod grace_period_tests {
         let id = client.create_contract(
             &client_addr,
             &freelancer_addr,
+            &None,
             &milestones,
             &None,
             &grace_period,
@@ -157,7 +175,14 @@ mod grace_period_tests {
 
         let milestones = vec![&env, 100_i128];
 
-        let id = client.create_contract(&client_addr, &freelancer_addr, &milestones, &None, &None);
+        let id = client.create_contract(
+            &client_addr,
+            &freelancer_addr,
+            &None,
+            &milestones,
+            &None,
+            &None,
+        );
 
         // Approve milestone
         assert!(client.approve_milestone(&id, &0));

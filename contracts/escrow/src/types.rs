@@ -1,4 +1,4 @@
-use soroban_sdk::{contracterror, contracttype, Address, Bytes, String, Vec};
+use soroban_sdk::{contracterror, contracttype, Address, Bytes, BytesN, Vec};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -13,6 +13,8 @@ pub enum DataKey {
     PendingReputation(Address),
     ReputationRecord(Address),
     ReadinessChecklist,
+    PendingApproval(u32),
+    PendingMigration,
 }
 
 #[contracterror]
@@ -35,6 +37,8 @@ pub enum EscrowError {
     DuplicateRating = 14,
     AlreadyFinalized = 15,
     NotReadyForFinalization = 16,
+    AlreadyReleased = 17,
+    InsufficientFunds = 18,
 }
 
 #[contracttype]
@@ -52,6 +56,7 @@ pub enum ContractStatus {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Milestone {
     pub amount: i128,
+    pub funded_amount: i128,
     pub released: bool,
     pub refunded: bool,
 }
@@ -69,6 +74,8 @@ pub struct EscrowContractData {
     pub released_amount: i128,
     pub refunded_amount: i128,
     pub finalized: bool,
+    pub terms_hash: Option<Bytes>,
+    pub grace_period_seconds: Option<u64>,
 }
 
 #[contracttype]
@@ -100,4 +107,22 @@ pub struct ReadinessChecklist {
 pub struct MainnetReadinessInfo {
     pub protocol_version: u32,
     pub checklist: ReadinessChecklist,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingApproval {
+    pub approver: Address,
+    pub contract_id: u32,
+    pub requested_at_ledger: u32,
+    pub expires_at_ledger: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingMigration {
+    pub proposer: Address,
+    pub new_wasm_hash: BytesN<32>,
+    pub requested_at_ledger: u32,
+    pub expires_at_ledger: u32,
 }
