@@ -13,9 +13,9 @@ pub use ttl::{
 };
 
 mod types;
-use types::ContractStatus;
-pub use crate::types::{MainnetReadinessInfo, ReadinessChecklist};
 use crate::types::DataKey as ReadinessDataKey;
+pub use crate::types::{MainnetReadinessInfo, ReadinessChecklist};
+use types::ContractStatus;
 
 // ─── Bounds constants ─────────────────────────────────────────────────────────
 //
@@ -196,11 +196,15 @@ impl Escrow {
             approval_expiry_seconds,
         };
 
-        env.storage().persistent().set(&DataKey::Contract(id), &data);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Contract(id), &data);
         env.storage()
             .persistent()
             .set(&DataKey::Milestones(id), &milestones);
-        env.storage().persistent().set(&DataKey::ContractCount, &(id + 1));
+        env.storage()
+            .persistent()
+            .set(&DataKey::ContractCount, &(id + 1));
 
         id
     }
@@ -254,7 +258,7 @@ impl Escrow {
                 .storage()
                 .persistent()
                 .get::<_, u64>(&approval_key)
-                .unwrap_or_else(|| env.panic_with_error(EscrowError::UnauthorizedRole)); 
+                .unwrap_or_else(|| env.panic_with_error(EscrowError::UnauthorizedRole));
 
             if env.ledger().timestamp() > approval_time + expiry_window {
                 env.panic_with_error(EscrowError::ApprovalExpired);
@@ -367,7 +371,11 @@ impl Escrow {
     }
 
     /// Helper: Calculate total released amount for a contract
-    fn calculate_released_amount(env: &Env, contract_id: u32, contract: &EscrowContractData) -> i128 {
+    fn calculate_released_amount(
+        env: &Env,
+        contract_id: u32,
+        contract: &EscrowContractData,
+    ) -> i128 {
         let mut released = 0i128;
         for (idx, amount) in contract.milestones.iter().enumerate() {
             let milestone_key = DataKey::MilestoneReleased(contract_id, idx as u32);
