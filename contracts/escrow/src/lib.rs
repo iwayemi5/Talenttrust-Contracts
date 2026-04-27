@@ -22,7 +22,7 @@ pub use amount_validation::{
 
 use types::ContractStatus;
 pub use crate::types::{
-    CONTRACT_SUMMARY_SCHEMA_VERSION, ContractSummary, MilestoneSummary,
+    CONTRACT_SUMMARY_SCHEMA_VERSION, ContractSummary, MilestoneSummary, ReadinessChecklist,
 };
 
 // ─── Bounds constants ─────────────────────────────────────────────────────────
@@ -165,6 +165,7 @@ pub enum DataKey {
     RefundableBalance(u32),
     ContractCount,
     MilestoneApprovalTime(u32, u32),
+    ReadinessChecklist,
 }
 
 
@@ -436,6 +437,19 @@ impl Escrow {
     pub fn get_milestones(env: Env, contract_id: u32) -> Vec<i128> {
         let contract = Self::get_contract(env, contract_id);
         contract.milestones
+    }
+
+    /// Get the readiness checklist. Panics with `ContractNotFound` if absent.
+    ///
+    /// The checklist is written by lifecycle operations (`initialize`,
+    /// `initialize_protocol_governance`, `activate_emergency_pause`, etc.).
+    /// Use the auto-generated `try_get_checklist` client wrapper for a
+    /// `Result`-returning variant that does not abort on missing data.
+    pub fn get_checklist(env: Env) -> ReadinessChecklist {
+        env.storage()
+            .persistent()
+            .get::<_, ReadinessChecklist>(&DataKey::ReadinessChecklist)
+            .unwrap_or_else(|| env.panic_with_error(EscrowError::ContractNotFound))
     }
 
     /// Cancel an escrow contract under strict authorization and state constraints.
@@ -912,3 +926,6 @@ impl Escrow {
 
 #[cfg(test)]
 mod simple_amount_test;
+
+#[cfg(test)]
+mod test_read_notfound;
