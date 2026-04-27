@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod cancel_contract;
+mod summary;
 
 use soroban_sdk::{symbol_short, testutils::Address as _, vec, Address, Env};
 
