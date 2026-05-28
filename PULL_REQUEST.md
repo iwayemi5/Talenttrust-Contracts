@@ -1,6 +1,8 @@
 # Pull Request: Refactor Repeated Admin-Load Boilerplate into Single Helper (#337)
 
 ## Description
+Closes #337
+
 This pull request refactors the repetitive admin authorization and validation logic in the TalentTrust Escrow contract (`contracts/escrow`) into a single, clean helper function.
 
 ### Key Changes
