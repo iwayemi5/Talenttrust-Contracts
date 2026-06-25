@@ -123,35 +123,6 @@ impl Escrow {
         true
     }
 
-    /// Cancel a live pending client migration.
-    ///
-    /// The current client must authorize the call, be the contract's client, and a live pending migration must exist.
-    /// The pending migration entry is removed and a `client_migration_cancelled` event is emitted.
-    pub fn cancel_client_migration(env: Env, contract_id: u32, current_client: Address) -> bool {
-        Self::require_not_paused(&env);
-        current_client.require_auth();
-
-        let contract = Self::load_contract(&env, contract_id);
-        Self::require_not_finalized(&env, contract_id);
-        if current_client != contract.client {
-            env.panic_with_error(EscrowError::UnauthorizedRole);
-        }
-
-        let key = Self::pending_migration_key(contract_id);
-        // Ensure a pending migration exists, otherwise panic with InvalidState
-        let _ = read_if_live(&env, &key).unwrap_or_else(|| env.panic_with_error(EscrowError::InvalidState));
-
-        // Remove the pending migration entry
-        remove_transient(&env, &key);
-
-        // Emit cancellation event
-        env.events().publish(
-            (Symbol::new(&env, "client_migration_cancelled"), contract_id),
-            (current_client, env.ledger().timestamp()),
-        );
-        true
-    }
-
     /// Return true if a live pending client migration exists.
     pub fn has_pending_client_migration(env: Env, contract_id: u32) -> bool {
         Self::pending_migration_exists(&env, contract_id)
