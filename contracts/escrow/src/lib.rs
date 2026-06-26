@@ -517,17 +517,8 @@ impl Escrow {
     /// # Errors
     /// * `ContractNotFound` - If contract doesn't exist
     pub fn get_milestones(env: Env, contract_id: u32) -> Vec<Milestone> {
-        let milestone_key = Symbol::new(&env, "milestones");
-        let milestones = env
-            .storage()
-            .persistent()
-            .get(&(DataKey::Contract(contract_id), milestone_key))
-            .unwrap_or_else(|| env.panic_with_error(Error::ContractNotFound));
-
-        // Extend TTL on milestone read
-        ttl::extend_milestone_ttl(&env, contract_id);
-
-        milestones
+        ttl::extend_contract_ttl(&env, contract_id);
+        ttl::load_milestones(&env, contract_id)
     }
 
     /// Calculates the refundable balance (funded but not released or refunded).

@@ -1,8 +1,7 @@
 use crate::{
-    approvals, ttl, Contract, ContractStatus, DataKey, Error, Escrow, Milestone,
-    ReleaseAuthorization,
+    approvals, ttl, Contract, ContractStatus, DataKey, Error, Escrow, ReleaseAuthorization,
 };
-use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
+use soroban_sdk::{contractimpl, Address, Env};
 
 #[contractimpl]
 impl Escrow {
@@ -88,14 +87,7 @@ impl Escrow {
         approvals::check_approvals(&env, &contract, contract_id, milestone_index)
             .unwrap_or_else(|e| env.panic_with_error(e));
 
-        let milestone_key = Symbol::new(&env, "milestones");
-        let mut milestones: Vec<Milestone> = env
-            .storage()
-            .persistent()
-            .get(&(DataKey::Contract(contract_id), milestone_key.clone()))
-            .unwrap();
-
-        ttl::extend_milestone_ttl(&env, contract_id);
+        let mut milestones = ttl::load_milestones(&env, contract_id);
 
         if milestone_index >= milestones.len() {
             env.panic_with_error(Error::IndexOutOfBounds);
@@ -148,15 +140,12 @@ impl Escrow {
             env.storage().persistent().set(&pending_key, &(pending + 1));
         }
 
-        env.storage().persistent().set(
-            &(DataKey::Contract(contract_id), milestone_key),
-            &milestones,
-        );
+        ttl::store_milestones(&env, contract_id, &milestones);
         env.storage()
             .persistent()
             .set(&DataKey::Contract(contract_id), &contract);
 
-        ttl::extend_contract_and_milestones_ttl(&env, contract_id);
+        ttl::extend_contract_ttl(&env, contract_id);
 
         true
     }
