@@ -612,6 +612,35 @@ impl Escrow {
             .get(&DataKey::Reputation(address))
     }
 
+    /// Returns the freelancer's average rating scaled to basis points (×10 000),
+    /// or `None` if no reputation record exists or no contracts have been completed.
+    ///
+    /// # Scaling
+    /// `result = total_rating * 10_000 / completed_contracts`
+    ///
+    /// A raw rating of 5 on a single contract returns `50_000` (5.0000 on a
+    /// 1–5 scale).  Clients divide by `10_000` to recover the decimal value.
+    ///
+    /// Checked arithmetic is used throughout; division by zero is impossible
+    /// because `None` is returned whenever `completed_contracts == 0`.
+    pub fn get_average_rating(env: Env, address: Address) -> Option<i128> {
+        /// Basis-point scaling factor (×10 000 preserves four decimal places).
+        const SCALE: i128 = 10_000;
+
+        let rep: types::Reputation = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Reputation(address))?;
+
+        if rep.completed_contracts == 0 {
+            return None;
+        }
+
+        rep.total_rating
+            .checked_mul(SCALE)
+            .and_then(|scaled| scaled.checked_div(rep.completed_contracts))
+    }
+
     pub fn get_pending_reputation_credits(env: Env, address: Address) -> i128 {
         env.storage()
             .persistent()

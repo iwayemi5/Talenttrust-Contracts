@@ -28,7 +28,7 @@ Read-only queries:
 - `get_contract(contract_id) -> EscrowContractData`
 - `get_finalization_record(contract_id) -> Option<FinalizationRecord>`
 - `get_reputation(freelancer) -> Option<ReputationRecord>`
-- `get_average_rating(freelancer) -> Option<i128>`
+- `get_average_rating(freelancer) -> Option<i128>` — scaled average (see [Average Rating](#average-rating))
 - `get_pending_reputation_credits(freelancer) -> u32`
 - `get_admin() -> Option<Address>`
 - `is_paused() -> bool`
@@ -123,6 +123,28 @@ Reputation requires `caller.require_auth()`, the caller must be the stored
 client, the freelancer argument must match the contract freelancer, the contract
 must be `Completed`, rating must be `1..=5`, and each contract can issue
 reputation once.
+
+## Average Rating
+
+`get_average_rating(freelancer) -> Option<i128>` returns the freelancer's
+average rating scaled to **basis points (×10 000)**, or `None` if no reputation
+record exists or `completed_contracts == 0`.
+
+Formula:
+
+```
+result = total_rating * 10_000 / completed_contracts
+```
+
+To convert back to the 1–5 decimal scale, divide by `10_000`:
+
+| `total_rating` | `completed_contracts` | `get_average_rating` | Decimal |
+|---|---|---|---|
+| 5 | 1 | 50 000 | 5.0000 |
+| 8 | 2 | 40 000 | 4.0000 |
+| 3 | 2 | 15 000 | 1.5000 |
+
+Checked arithmetic is used; overflow and division-by-zero cannot occur.
 
 ## Cancellation
 
