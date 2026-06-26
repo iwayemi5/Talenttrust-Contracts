@@ -1,16 +1,6 @@
-use super::{
-    assert_contract_error, complete_contract, create_contract, default_milestones,
-    generated_participants, register_client, total_milestone_amount, MILESTONE_ONE, MILESTONE_TWO,
-    MILESTONE_THREE,
-};
-use crate::{
-    ttl, ContractStatus, EscrowError, ReleaseAuthorization,
-};
-use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
-    vec, Address, Env, Symbol,
-};
-
+use super::{create_contract, register_client};
+use crate::{ContractStatus, EscrowError, ReleaseAuthorization};
+use soroban_sdk::{testutils::Address as _, vec, Address, Env};
 
 /// Finalization succeeds from Completed status; record snapshot matches contract state.
 #[test]
@@ -43,20 +33,27 @@ fn finalize_completed_contract_persists_immutable_close_record() {
     assert_eq!(record.summary.released_milestone_count, 3);
 }
 
-/// Finalization succeeds from Completed status; client can finalize.
+/// Finalization by arbiter works on a completed contract.
 #[test]
-fn finalize_completed_contract_allows_client_finalizer() {
+fn finalize_completed_contract_allows_arbiter_finalizer() {
     let env = Env::default();
     env.mock_all_auths();
     let client = register_client(&env);
-    let (client_addr, freelancer_addr, _arbiter_addr, contract_id) =
+    let (client_addr, freelancer_addr, arbiter_addr, contract_id) =
         super::create_contract_with_arbiter(&env, &client);
 
     assert!(client.deposit_funds(&contract_id, &client_addr, &super::total_milestone_amount()));
-    assert!(client.raise_dispute(&contract_id, &client_addr));
+
+    // Release all milestones to reach Completed state.
+    for idx in 0u32..3u32 {
+        client.approve_milestone_release(&contract_id, &client_addr, &idx);
+        client.release_milestone(&contract_id, &client_addr, &idx);
+    }
+    let _ = freelancer_addr; // silence unused warning
+
     assert_eq!(
         client.get_contract(&contract_id).status,
-        ContractStatus::Disputed
+        ContractStatus::Completed
     );
 
     assert!(client.finalize_contract(&contract_id, &client_addr));
@@ -65,16 +62,16 @@ fn finalize_completed_contract_allows_client_finalizer() {
         .get_finalization_record(&contract_id)
         .expect("finalization record should exist");
     assert_eq!(record.finalizer, arbiter_addr);
-    assert_eq!(record.summary.status, ContractStatus::Disputed);
+    assert_eq!(record.summary.status, ContractStatus::Completed);
     assert_eq!(
         record.summary.funded_amount,
         super::total_milestone_amount()
     );
-    assert_eq!(record.summary.released_amount, 0);
     assert_eq!(
-        record.summary.funded_amount,
+        record.summary.released_amount,
         super::total_milestone_amount()
     );
+    assert_eq!(record.summary.refundable_balance, 0);
 }
 
 #[test]
@@ -101,6 +98,16 @@ fn try_get_contract_reports_missing_state_without_mutating_storage() {
     let client = register_client(&env);
 
     super::assert_contract_error(client.try_get_contract(&777), EscrowError::ContractNotFound);
+    let client_addr = Address::generate(&env);
+    let freelancer_addr = Address::generate(&env);
+    let milestones = vec![&env, 10_i128];
+    let _created = client.create_contract(
+        &client_addr,
+        &freelancer_addr,
+        &None,
+        &milestones,
+        &ReleaseAuthorization::ClientOnly,
+    );
 }
 
 /// Freelancer may also finalize a Completed contract.
@@ -211,9 +218,12 @@ fn refund_unreleased_milestones_rejects_after_finalization() {
 
     assert!(client.finalize_contract(&contract_id, &client_addr));
 
-    super::assert_contract_error_i128(
-        client.try_refund_unreleased_milestones(&contract_id, &vec![&env, 0u32]),
-        EscrowError::AlreadyFinalized,
+    let result = client.try_refund_unreleased_milestones(&contract_id, &vec![&env, 0u32]);
+    let err = result.expect_err("expected contract panic");
+    let actual = err.expect("expected Ok(Error), got InvokeError");
+    assert_eq!(
+        actual,
+        soroban_sdk::Error::from(EscrowError::AlreadyFinalized)
     );
 }
 
@@ -276,8 +286,6 @@ fn pause_blocks_finalization() {
     let env = Env::default();
     env.mock_all_auths();
     let client = register_client(&env);
-    let admin = Address::generate(&env);
-    assert!(client.initialize(&admin));
     let (client_addr, _freelancer_addr, contract_id) = super::complete_contract(&env, &client);
     assert!(client.pause());
 
@@ -303,8 +311,7 @@ fn finalize_completed_with_mixed_releases_and_refunds() {
     assert!(client.approve_milestone_release(&contract_id, &client_addr, &1));
     assert!(client.release_milestone(&contract_id, &client_addr, &1));
 
-    let refunded = client.refund_unreleased_milestones(&contract_id, &vec![&env, 2u32]);
-    assert!(refunded > 0);
+    assert!(client.refund_unreleased_milestones(&contract_id, &vec![&env, 2u32]) > 0);
     assert_eq!(
         client.get_contract(&contract_id).status,
         ContractStatus::Completed

@@ -219,30 +219,17 @@ mod tests {
     use crate::Escrow;
     use soroban_sdk::{testutils::Address as _, Env};
 
-    /// Helper: set up contract storage inside a contract context.
-    fn setup_contract(
+    fn setup_contract_in_storage(
         env: &Env,
-        escrow_addr: &soroban_sdk::Address,
+        escrow_id: &crate::Address,
         contract_id: u32,
-        client: &soroban_sdk::Address,
-        freelancer: &soroban_sdk::Address,
-        auth: ReleaseAuthorization,
+        contract: &Contract,
+        release_auth: ReleaseAuthorization,
     ) {
-        env.as_contract(escrow_addr, || {
-            let contract = Contract {
-                client: client.clone(),
-                freelancer: freelancer.clone(),
-                arbiter: None,
-                status: ContractStatus::Funded,
-                funded_amount: 1000,
-                released_amount: 0,
-                refunded_amount: 0,
-                release_authorization: auth,
-            };
+        env.as_contract(escrow_id, || {
             env.storage()
                 .persistent()
-                .set(&DataKey::Contract(contract_id), &contract);
-
+                .set(&DataKey::Contract(contract_id), contract);
             let milestones = Vec::from_array(
                 env,
                 [Milestone {
@@ -250,10 +237,11 @@ mod tests {
                     funded_amount: 0,
                     released: false,
                     refunded: false,
-                    work_evidence: None,
                     refunded_amount: 0,
+                    work_evidence: None,
                 }],
             );
+            let _ = release_auth;
             let milestone_key = Symbol::new(env, "milestones");
             env.storage().persistent().set(
                 &(DataKey::Contract(contract_id), milestone_key),
@@ -262,55 +250,44 @@ mod tests {
         });
     }
 
-    /// Helper: run a closure inside the contract's storage context.
-    fn with_contract<T>(env: &Env, escrow_addr: &soroban_sdk::Address, f: impl FnOnce() -> T) -> T {
-        env.as_contract(escrow_addr, f)
-    }
-
-    fn register(env: &Env) -> soroban_sdk::Address {
-        env.register(Escrow, ())
-    }
-
     #[test]
     fn test_approve_milestone_client_only() {
         let env = Env::default();
         env.mock_all_auths();
 
-        let escrow_addr = register(&env);
-        let client = soroban_sdk::Address::generate(&env);
-        let freelancer = soroban_sdk::Address::generate(&env);
+        let escrow_id = env.register(Escrow, ());
+        let client = crate::Address::generate(&env);
+        let freelancer = crate::Address::generate(&env);
+
+        let contract = Contract {
+            client: client.clone(),
+            freelancer: freelancer.clone(),
+            arbiter: None,
+            status: ContractStatus::Funded,
+            funded_amount: 1000,
+            released_amount: 0,
+            refunded_amount: 0,
+            release_authorization: ReleaseAuthorization::ClientOnly,
+        };
+
         let contract_id = 1u32;
-        let contract_addr = env.register(Escrow, ());
-        env.as_contract(&contract_addr, || {
-            env.storage()
-                .persistent()
-                .set(&DataKey::Contract(contract_id), &contract);
+        setup_contract_in_storage(
+            &env,
+            &escrow_id,
+            contract_id,
+            &contract,
+            ReleaseAuthorization::ClientOnly,
+        );
 
-            let milestones = Vec::from_array(
-                &env,
-                [Milestone {
-                    amount: 1000,
-                    funded_amount: 0,
-                    released: false,
-                    refunded: false,
-                    refunded_amount: 0,
-                    work_evidence: None,
-                }],
-            );
-            let milestone_key = Symbol::new(&env, "milestones");
-            env.storage().persistent().set(
-                &(DataKey::Contract(contract_id), milestone_key),
-                &milestones,
-            );
-
-            // Client approves (inside as_contract context)
-            let result = approve_milestone(&env, contract_id, 0, &client);
-            assert!(result.is_ok());
-
-            // Check approvals (inside as_contract context)
-            let check = check_approvals(&env, &contract, contract_id, 0);
-            assert!(check.is_ok());
+        let result = env.as_contract(&escrow_id, || {
+            approve_milestone(&env, contract_id, 0, &client)
         });
+        assert!(result.is_ok());
+
+        let check_ok = env.as_contract(&escrow_id, || {
+            check_approvals(&env, &contract, contract_id, 0).is_ok()
+        });
+        assert!(check_ok);
     }
 
     #[test]
@@ -318,47 +295,49 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let escrow_addr = register(&env);
-        let client = soroban_sdk::Address::generate(&env);
-        let freelancer = soroban_sdk::Address::generate(&env);
+        let escrow_id = env.register(Escrow, ());
+        let client = crate::Address::generate(&env);
+        let freelancer = crate::Address::generate(&env);
+
+        let contract = Contract {
+            client: client.clone(),
+            freelancer: freelancer.clone(),
+            arbiter: None,
+            status: ContractStatus::Funded,
+            funded_amount: 1000,
+            released_amount: 0,
+            refunded_amount: 0,
+            release_authorization: ReleaseAuthorization::MultiSig,
+        };
+
         let contract_id = 1u32;
-        let contract_addr = env.register(Escrow, ());
-        env.as_contract(&contract_addr, || {
-            env.storage()
-                .persistent()
-                .set(&DataKey::Contract(contract_id), &contract);
+        setup_contract_in_storage(
+            &env,
+            &escrow_id,
+            contract_id,
+            &contract,
+            ReleaseAuthorization::MultiSig,
+        );
 
-            let milestones = Vec::from_array(
-                &env,
-                [Milestone {
-                    amount: 1000,
-                    funded_amount: 0,
-                    released: false,
-                    refunded: false,
-                    refunded_amount: 0,
-                    work_evidence: None,
-                }],
-            );
-            let milestone_key = Symbol::new(&env, "milestones");
-            env.storage().persistent().set(
-                &(DataKey::Contract(contract_id), milestone_key),
-                &milestones,
-            );
-
-            // Only client approves - insufficient
-            let result = approve_milestone(&env, contract_id, 0, &client);
-            assert!(result.is_ok());
-
-            let check = check_approvals(&env, &contract, contract_id, 0);
-            assert_eq!(check, Err(Error::InsufficientApprovals));
-
-            // Freelancer also approves - now sufficient
-            let result = approve_milestone(&env, contract_id, 0, &freelancer);
-            assert!(result.is_ok());
-
-            let check = check_approvals(&env, &contract, contract_id, 0);
-            assert!(check.is_ok());
+        let result = env.as_contract(&escrow_id, || {
+            approve_milestone(&env, contract_id, 0, &client)
         });
+        assert!(result.is_ok());
+
+        let insufficient = env.as_contract(&escrow_id, || {
+            check_approvals(&env, &contract, contract_id, 0)
+        });
+        assert_eq!(insufficient, Err(Error::InsufficientApprovals));
+
+        let result2 = env.as_contract(&escrow_id, || {
+            approve_milestone(&env, contract_id, 0, &freelancer)
+        });
+        assert!(result2.is_ok());
+
+        let check_ok = env.as_contract(&escrow_id, || {
+            check_approvals(&env, &contract, contract_id, 0).is_ok()
+        });
+        assert!(check_ok);
     }
 
     #[test]
@@ -366,40 +345,38 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
 
-        let escrow_addr = register(&env);
-        let client = soroban_sdk::Address::generate(&env);
-        let freelancer = soroban_sdk::Address::generate(&env);
+        let escrow_id = env.register(Escrow, ());
+        let client = crate::Address::generate(&env);
+        let freelancer = crate::Address::generate(&env);
+
+        let contract = Contract {
+            client: client.clone(),
+            freelancer: freelancer.clone(),
+            arbiter: None,
+            status: ContractStatus::Funded,
+            funded_amount: 1000,
+            released_amount: 0,
+            refunded_amount: 0,
+            release_authorization: ReleaseAuthorization::ClientOnly,
+        };
+
         let contract_id = 1u32;
-        let contract_addr = env.register(Escrow, ());
-        env.as_contract(&contract_addr, || {
-            env.storage()
-                .persistent()
-                .set(&DataKey::Contract(contract_id), &contract);
+        setup_contract_in_storage(
+            &env,
+            &escrow_id,
+            contract_id,
+            &contract,
+            ReleaseAuthorization::ClientOnly,
+        );
 
-            let milestones = Vec::from_array(
-                &env,
-                [Milestone {
-                    amount: 1000,
-                    funded_amount: 0,
-                    released: false,
-                    refunded: false,
-                    refunded_amount: 0,
-                    work_evidence: None,
-                }],
-            );
-            let milestone_key = Symbol::new(&env, "milestones");
-            env.storage().persistent().set(
-                &(DataKey::Contract(contract_id), milestone_key),
-                &milestones,
-            );
-
-            // First approval succeeds
-            let result = approve_milestone(&env, contract_id, 0, &client);
-            assert!(result.is_ok());
-
-            // Second approval fails
-            let result = approve_milestone(&env, contract_id, 0, &client);
-            assert_eq!(result, Err(Error::AlreadyApproved));
+        let first = env.as_contract(&escrow_id, || {
+            approve_milestone(&env, contract_id, 0, &client)
         });
+        assert!(first.is_ok());
+
+        let second = env.as_contract(&escrow_id, || {
+            approve_milestone(&env, contract_id, 0, &client)
+        });
+        assert_eq!(second, Err(Error::AlreadyApproved));
     }
 }

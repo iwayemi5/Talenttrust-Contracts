@@ -123,7 +123,6 @@ impl Escrow {
     }
 }
 
-#[soroban_sdk::contractimpl]
 impl Escrow {
     /// Finalize an escrow contract by writing immutable close metadata.
     ///
@@ -138,7 +137,7 @@ impl Escrow {
     /// - `AlreadyFinalized` when a close record already exists.
     /// - `UnauthorizedRole` when `finalizer` is not a contract participant.
     /// - `InvalidStatusTransition` unless status is `Completed` or `Disputed`.
-    pub fn finalize_contract(env: Env, contract_id: u32, finalizer: Address) -> bool {
+    pub(crate) fn finalize_contract_impl(env: Env, contract_id: u32, finalizer: Address) -> bool {
         Self::require_not_paused(&env);
         finalizer.require_auth();
 
@@ -171,7 +170,10 @@ impl Escrow {
     }
 
     /// Return immutable close metadata for `contract_id`, if it has been finalized.
-    pub fn get_finalization_record(env: Env, contract_id: u32) -> Option<FinalizationRecord> {
+    pub(crate) fn get_finalization_record_impl(
+        env: Env,
+        contract_id: u32,
+    ) -> Option<FinalizationRecord> {
         env.storage()
             .persistent()
             .get(&Self::finalization_key(contract_id))

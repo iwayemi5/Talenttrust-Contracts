@@ -4,11 +4,12 @@ use crate::migration::PendingClientMigration;
 use crate::ttl::PENDING_MIGRATION_TTL_LEDGERS;
 use crate::{
     types::{ContractStatus, DataKey},
-    Contract, Escrow, EscrowClient, EscrowError,
+    Contract, EscrowError,
 };
 use soroban_sdk::{
-    testutils::Address as _, testutils::Ledger as _, testutils::LedgerInfo, Address, Env, IntoVal,
-    Symbol, Val,
+    testutils::LedgerInfo,
+    testutils::{Address as _, Ledger as _},
+    Address, Env,
 };
 
 use super::{assert_contract_error, create_contract, register_client, total_milestone_amount};
@@ -25,26 +26,6 @@ fn set_escrow_status(env: &Env, escrow_addr: &Address, id: u32, status: Contract
         contract.status = status;
         env.storage().persistent().set(&key, &contract);
     });
-}
-
-// ---------------------------------------------------------------------------
-// Helper: check whether any emitted event has a given Symbol as its first topic.
-//
-// env.events().all() returns Vec<(Address, Vec<Val>, Val)>:
-//   tuple.0 = the contract Address that emitted the event
-//   tuple.1 = the topics Vec<Val>  ← Symbol is topics[0]
-//   tuple.2 = the data Val
-// ---------------------------------------------------------------------------
-
-fn has_event_with_topic(env: &Env, topic: &Symbol) -> bool {
-    let topic_xdr = topic.to_xdr(env);
-    env.events().all().iter().any(|event| {
-        let topics = event.1.clone();
-        if topics.is_empty() {
-            return false;
-        }
-        topics.get(0).unwrap().to_xdr(env) == topic_xdr
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +209,7 @@ fn expired_proposal_cannot_be_accepted() {
 
 /// `require_migration_allowed` in migration.rs blocks proposals when the
 /// escrow is in a terminal state.  All four terminal states are tested.
-///
+/// Completed contract blocks proposal.
 #[test]
 fn migration_blocked_on_completed_contract() {
     let env = Env::default();
