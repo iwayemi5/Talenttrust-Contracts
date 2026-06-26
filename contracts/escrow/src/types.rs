@@ -1,4 +1,15 @@
-use soroban_sdk::{contracterror, contracttype, Address, BytesN, String, Vec};
+use soroban_sdk::{contracterror, contracttype, Address, String, Vec};
+
+/// Pending treasury/admin rotation proposal, stored under [`DataKey::PendingAdmin`].
+///
+/// Captures the proposed new admin and the ledger at which the proposal was
+/// made so that `accept_governance_admin` can enforce `ADMIN_ROTATION_MIN_DELAY_LEDGERS`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingAdminProposal {
+    pub proposed: Address,
+    pub proposed_at_ledger: u32,
+}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -215,16 +226,34 @@ pub struct Milestone {
     pub deadline: Option<u64>,
 }
 
+/// Protocol version shipped with this build.
+pub const MAINNET_PROTOCOL_VERSION: u32 = 1;
+
+/// Maximum total escrow value per contract in stroops (1 XLM = 10_000_000 stroops).
+/// Hard cap: 100_000_000 XLM.
+pub const MAINNET_MAX_TOTAL_ESCROW_PER_CONTRACT_STROOPS: i128 = 1_000_000_000_000_000;
+
 /// Readiness checklist stored under [`DataKey::ReadinessChecklist`].
+///
+/// Returned by `get_mainnet_readiness_info`. All boolean fields default to
+/// `false` on a fresh deployment; they flip to `true` as the operator
+/// progresses through the initialization sequence.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReadinessChecklist {
-    /// `true` after `initialize` has been called successfully.
+    /// `true` after `initialize(admin)` has been called successfully.
     pub initialized: bool,
-    /// `true` after protocol governance parameters have been set.
+    /// `true` after `set_governed_params` has been called successfully.
     pub governed_params_set: bool,
     /// `true` after an emergency control operation has been invoked.
     pub emergency_controls_enabled: bool,
+    /// `true` when `MAINNET_MAX_TOTAL_ESCROW_PER_CONTRACT_STROOPS > 0`.
+    /// Derived at runtime from the compile-time constant; never written to storage.
+    pub caps_set: bool,
+    /// Protocol version compiled into this build.
+    pub protocol_version: u32,
+    /// Compile-time maximum escrow total per contract, in stroops.
+    pub max_escrow_total_stroops: i128,
 }
 
 impl Default for ReadinessChecklist {
@@ -233,6 +262,9 @@ impl Default for ReadinessChecklist {
             initialized: false,
             governed_params_set: false,
             emergency_controls_enabled: false,
+            caps_set: MAINNET_MAX_TOTAL_ESCROW_PER_CONTRACT_STROOPS > 0,
+            protocol_version: MAINNET_PROTOCOL_VERSION,
+            max_escrow_total_stroops: MAINNET_MAX_TOTAL_ESCROW_PER_CONTRACT_STROOPS,
         }
     }
 }

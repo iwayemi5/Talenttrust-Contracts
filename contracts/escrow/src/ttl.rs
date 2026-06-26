@@ -14,6 +14,11 @@ pub const LEDGERS_PER_DAY: u32 = 17_280;
 pub const PENDING_APPROVAL_TTL_LEDGERS: u32 = LEDGERS_PER_DAY * 7;
 pub const PENDING_APPROVAL_BUMP_THRESHOLD: u32 = LEDGERS_PER_DAY;
 
+/// Minimum ledgers that must elapse between proposing and finalising a
+/// treasury / admin rotation.  At ~5 s per ledger this is roughly 2 days,
+/// giving stakeholders time to react to an unexpected proposal.
+pub const ADMIN_ROTATION_MIN_DELAY_LEDGERS: u32 = LEDGERS_PER_DAY * 2;
+
 #[allow(dead_code)]
 pub const PENDING_MIGRATION_TTL_LEDGERS: u32 = LEDGERS_PER_DAY * 21;
 #[allow(dead_code)]

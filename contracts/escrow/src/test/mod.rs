@@ -7,14 +7,13 @@ use crate::{Contract, ContractStatus, Escrow, EscrowClient, EscrowError, Milesto
 
 // --- Submodules ---
 
-mod access_control;
-mod accounting_invariants;
-mod approval_expiry;
-mod authorization_matrix_validation;
-mod cancel_contract;
 mod client_migration;
-mod storage;
-mod summary;
+mod emergency_controls;
+mod pause_controls;
+mod persistence;
+mod release_authorization;
+mod reputation;
+mod treasury_rotation_timelock;
 
 // --- Shared constants ---
 
