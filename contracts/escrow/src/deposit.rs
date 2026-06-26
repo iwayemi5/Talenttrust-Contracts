@@ -1,5 +1,5 @@
 use crate::{
-    ttl, Contract, ContractStatus, DataKey, Error, Escrow, EscrowArgs, EscrowClient, Milestone,
+    ttl, validate_single_amount, Contract, ContractStatus, DataKey, Error, Escrow, EscrowArgs, EscrowClient, EscrowError, Milestone,
 };
 use soroban_sdk::{contractimpl, Address, Env, Symbol, Vec};
 
@@ -21,8 +21,15 @@ impl Escrow {
     /// * `InvalidState` - If contract is not in Created state
     /// * `UnauthorizedRole` - If caller is not the client
     pub fn deposit_funds(env: Env, contract_id: u32, caller: Address, amount: i128) -> bool {
-        if amount <= 0 {
-            env.panic_with_error(Error::AmountMustBePositive);
+        if let Err(e) = validate_single_amount(amount) {
+            match e {
+                EscrowError::AmountMustBePositive => {
+                    env.panic_with_error(Error::AmountMustBePositive);
+                }
+                _ => {
+                    env.panic_with_error(Error::InvalidMilestoneAmount);
+                }
+            }
         }
 
         let mut contract: Contract = env

@@ -9,10 +9,13 @@ This document reflects the escrow API currently implemented in
 - Pause and emergency controls require the stored admin's authorization.
 - Mutating lifecycle calls fail while paused or in emergency mode.
 - `create_contract` requires client authorization, rejects identical
-  client/freelancer addresses, rejects empty or non-positive milestones, caps
-  milestone count, and caps total escrow value.
-- `deposit_funds` rejects non-positive amounts, repeat exact-total deposits,
-  exact-total mismatches, and incremental overfunding.
+  client/freelancer addresses, rejects empty milestones, caps milestone count,
+  caps total escrow value, and validates each milestone amount using centralized
+  amount validation (enforcing positivity, minimum positive amount of 1 stroop,
+  and a maximum single amount of 1,000,000,000,0000000 stroops/1M tokens).
+- `deposit_funds` validates the deposit amount using centralized amount validation
+  (enforcing positivity and maximum single amount limits), rejects repeat
+  exact-total deposits, exact-total mismatches, and incremental overfunding.
 - `release_milestone` requires `caller.require_auth()`, enforces the contract's
   `ReleaseAuthorization` mode (ClientOnly, ArbiterOnly, ClientAndArbiter, or
   MultiSig), and checks valid non-expired approvals before releasing funds.

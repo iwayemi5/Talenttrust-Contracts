@@ -1,5 +1,5 @@
 use crate::{
-    ttl, Contract, ContractStatus, DataKey, Error, Escrow, EscrowArgs, EscrowClient, Milestone,
+    ttl, validate_single_amount, Contract, ContractStatus, DataKey, Error, Escrow, EscrowArgs, EscrowClient, Milestone,
     ReleaseAuthorization,
 };
 use soroban_sdk::{contractimpl, symbol_short, Address, Env, Symbol, Vec};
@@ -61,7 +61,7 @@ impl Escrow {
         }
 
         for amount in milestones.iter() {
-            if amount <= 0 {
+            if validate_single_amount(amount).is_err() {
                 env.panic_with_error(Error::InvalidMilestoneAmount);
             }
         }

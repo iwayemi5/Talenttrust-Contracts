@@ -254,3 +254,32 @@ fn test_cumulative_deposit_validation() {
         Err(EscrowError::InvalidMilestoneAmount)
     );
 }
+
+#[test]
+#[should_panic]
+fn test_create_contract_panics_when_single_milestone_exceeds_maximum_bound() {
+    let (env, client, hiring_party, service_provider) = setup();
+    let milestones = vec![&env, 1_000_000_0000001_i128]; // Max is 1M tokens (1_000_000_0000000 stroops)
+    client.create_contract(
+        &hiring_party,
+        &service_provider,
+        &None,
+        &milestones,
+        &ReleaseAuthorization::ClientOnly,
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_deposit_funds_panics_when_single_deposit_exceeds_maximum_bound() {
+    let (env, client, hiring_party, service_provider) = setup();
+    let milestones = vec![&env, 100_0000000_i128];
+    let contract_id = client.create_contract(
+        &hiring_party,
+        &service_provider,
+        &None,
+        &milestones,
+        &ReleaseAuthorization::ClientOnly,
+    );
+    client.deposit_funds(&contract_id, &hiring_party, &1_000_000_0000001_i128);
+}

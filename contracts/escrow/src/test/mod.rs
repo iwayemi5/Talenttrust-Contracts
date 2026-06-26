@@ -13,6 +13,7 @@ mod persistence;
 mod reputation;
 mod release_authorization;
 mod client_migration;
+mod input_sanitization_amounts;
 
 // --- Shared constants ---
 
