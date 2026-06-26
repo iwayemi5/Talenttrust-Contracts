@@ -278,6 +278,40 @@ The contract writes one immutable `FinalizationRecord` containing the finalizer,
 ledger timestamp, and a `ContractSummary` snapshot. After the record exists,
 contract-specific mutating calls reject with `AlreadyFinalized`.
 
+## Client Migration
+
+```rust
+escrow.propose_client_migration(&contract_id, &current_client, &new_client);
+escrow.accept_client_migration(&contract_id, &new_client);
+```
+
+Client migration is a two-step, time-boxed handover of the `client` role on an
+existing contract:
+
+1. `propose_client_migration` requires `current_client.require_auth()`, the
+   caller must be the stored client, and the proposed address must not be the
+   current client or the freelancer. It stores a `PendingClientMigration` record
+   in temporary storage.
+2. `accept_client_migration` requires `new_client.require_auth()` and the
+   acceptor must match the proposed address; on success it updates
+   `contract.client` and clears the pending record.
+
+### Migration window (TTL)
+
+The pending record is stored with a fixed time-to-live of
+`PENDING_MIGRATION_TTL_LEDGERS = LEDGERS_PER_DAY * 21` ledgers — roughly **21
+days** at ~5s/ledger. The record's `expires_at_ledger` is set to
+`requested_at_ledger + PENDING_MIGRATION_TTL_LEDGERS`.
+
+- **Within the window** (current ledger `< expires_at_ledger`): acceptance by
+  the proposed address succeeds and transfers client rights.
+- **After the window**: Soroban auto-evicts the temporary entry, so
+  `read_if_live` returns `None`. `has_pending_client_migration` then reports
+  `false` and `accept_client_migration` fails with `InvalidState`.
+
+Security assumption: an expired proposal cannot transfer client rights. Once the
+TTL lapses the stale proposal is unrecoverable; the current client must submit a
+fresh `propose_client_migration` call to start a new window.
 ## Two-Step Governance Admin Transfer
 
 The admin transfer uses a propose-accept (two-step) pattern:
@@ -361,6 +395,16 @@ indexers can reconcile the escrow's accounting against the SAC's
   `token::Client::transfer` BEFORE updating milestone/contract state, so a
   failed payout leaves state untouched.
 - Releases fail on duplicate milestone release, invalid milestone id, missing
+  contract, paused state, and insufficient funded balance.
+- Arithmetic for escrow totals, deposits, and releases uses checked helpers and
+  panics with `PotentialOverflow` on overflow.
+- Accounting is checked after balance-changing operations.
+- The contract stores accounting state only; token custody and token transfers
+  are not implemented in `lib.rs` and must be handled by an audited integration.
+- Storage uses persistent keys for live contract state. Pending client
+  migrations are written to temporary storage with a 21-day TTL (see
+  [Client Migration](#client-migration)); the pending-approval TTL constant
+  exists for a planned approval flow with no current writing entrypoint.
   contract, paused state, missing settlement token, and insufficient funded
   balance.
 - Arithmetic for escrow totals, deposits, and releases uses checked helpers
