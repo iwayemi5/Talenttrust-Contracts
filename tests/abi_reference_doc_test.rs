@@ -3,7 +3,8 @@ use std::{fs, path::Path};
 #[test]
 fn abi_reference_document_lists_current_public_entrypoints() {
     // Integration test lives under contracts/escrow; ABI docs are at repo root.
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        ;
     let mut root = manifest_dir.to_path_buf();
     while !root
         .join("docs")
